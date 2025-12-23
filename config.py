@@ -26,7 +26,7 @@ class DetectionConfig:
     # MediaPipe手部检测配置
     HAND_DETECTION_CONFIDENCE = 0.4  # 降低阈值以提高灵敏度，特别是戴手套的情况
     HAND_TRACKING_CONFIDENCE = 0.4   # 降低跟踪阈值
-    MAX_NUM_HANDS = 2                # 最大检测手部数量
+    MAX_NUM_HANDS = 4                # 最大检测手部数量
     
     # 肤色检测配置 (YCrCb色彩空间)
     SKIN_YCRCB_MIN = (0, 133, 77)    # YCrCb下界

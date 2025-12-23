@@ -78,12 +78,10 @@ class AlarmSystem:
             elif self.violation_count >= AlarmConfig.ALARM_FRAME_THRESHOLD // 2:
                 self.current_level = AlarmConfig.LEVEL_WARNING
         else:
-            # 逐步降低违规计数
-            self.violation_count = max(0, self.violation_count - 1)
-            
-            if self.violation_count == 0:
-                self.current_level = AlarmConfig.LEVEL_NORMAL
-                self.is_alarming = False
+            # 立即重置违规计数和报警状态，实现“撤销及时”
+            self.violation_count = 0
+            self.current_level = AlarmConfig.LEVEL_NORMAL
+            self.is_alarming = False
         
         return self.current_level
     

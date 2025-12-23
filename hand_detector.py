@@ -229,8 +229,18 @@ class HandDetector:
         if len(self.detection_history) > self.history_size:
             self.detection_history.pop(0)
         
-        # 稳定检测结果（时间滤波）
-        stable_detection = sum(self.detection_history) >= len(self.detection_history) // 2 + 1
+        # 稳定检测结果（非对称时间滤波）
+        # 开启报警需要多数帧确认（防误报），关闭报警只需少数帧确认（提高恢复速度）
+        if hand_detected:
+            # 开启：需要历史记录中超过一半的帧检测到手
+            stable_detection = sum(self.detection_history) >= len(self.detection_history) // 2 + 1
+        else:
+            # 关闭：如果当前帧没检测到，且历史记录中没检测到的比例较高，则立即关闭
+            # 这里设置为：只要最近 2 帧都没检测到，就立即判定为离开
+            if len(self.detection_history) >= 2 and not self.detection_history[-1] and not self.detection_history[-2]:
+                stable_detection = False
+            else:
+                stable_detection = sum(self.detection_history) >= len(self.detection_history) // 2 + 1
         
         result = {
             'hand_detected': hand_detected,
