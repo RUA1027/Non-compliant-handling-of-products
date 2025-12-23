@@ -258,6 +258,11 @@ class EventLogger:
             event: 事件字典
             screenshot_path: 截图路径
         """
+        # 转换为相对路径以提高可移植性
+        if screenshot_path and os.path.isabs(screenshot_path):
+            from config import BASE_DIR
+            screenshot_path = os.path.relpath(screenshot_path, BASE_DIR)
+            
         with open(self.log_file, 'a', encoding='utf-8') as f:
             time_str = event['time'].strftime('%Y-%m-%d %H:%M:%S.%f')
             f.write(f"{time_str},{event['level']},{event['confidence']:.4f},")

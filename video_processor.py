@@ -154,12 +154,20 @@ class FrameRenderer:
         try:
             from PIL import Image, ImageDraw, ImageFont
             self.pil_available = True
-            # 尝试加载中文字体
-            try:
-                self.font = ImageFont.truetype("simhei.ttf", 24)
-                self.use_pil = True
-            except:
+            # 尝试加载中文字体 (按优先级尝试不同系统下的常见中文字体)
+            font_names = ["simhei.ttf", "msyh.ttc", "STHeiti Medium.ttc", "DroidSansFallback.ttf"]
+            self.font = None
+            for font_name in font_names:
+                try:
+                    self.font = ImageFont.truetype(font_name, 24)
+                    break
+                except:
+                    continue
+            
+            if self.font is None:
                 self.font = ImageFont.load_default()
+            else:
+                self.use_pil = True
         except ImportError:
             self.pil_available = False
     

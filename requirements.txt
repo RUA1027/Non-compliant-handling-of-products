@@ -1,5 +1,5 @@
-opencv-python
-mediapipe
-numpy
-Pillow
+opencv-python>=4.8.0
+mediapipe==0.10.14
+numpy==1.26.4
+Pillow>=10.0.0
 # winsound is built-in on Windows

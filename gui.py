@@ -13,7 +13,7 @@ from PIL import Image, ImageTk
 from datetime import datetime
 
 from main import ViolationDetectionSystem
-from config import NORMAL_VIDEO_DIR, ABNORMAL_VIDEO_DIR, AlarmConfig
+from config import NORMAL_VIDEO_DIR, ABNORMAL_VIDEO_DIR, VIDEO_DIR, AlarmConfig
 
 class DetectionGUI:
     def __init__(self, root):
@@ -123,7 +123,6 @@ class DetectionGUI:
     def _play_example(self):
         rel_path = self.example_var.get()
         if rel_path:
-            from config import VIDEO_DIR
             path = os.path.join(VIDEO_DIR, rel_path)
             self._stop_detection()
             self.current_video_path = path
