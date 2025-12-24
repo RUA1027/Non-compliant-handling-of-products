@@ -196,33 +196,70 @@ class FrameRenderer:
         indicator_radius = 15
         cv2.circle(frame, (30, bar_height // 2), indicator_radius, status_color, -1)
         
-        # 绘制状态文本
-        self._put_text(frame, status_text, (60, bar_height // 2 + 8),
-                      color=(255, 255, 255), font_scale=0.7)
+        # 准备绘制文本
+        texts = []
+        texts.append((status_text, (60, bar_height // 2 - 12), (255, 255, 255)))
         
-        # 绘制帧率
         if DisplayConfig.SHOW_FPS:
             fps_text = f"FPS: {fps:.1f}"
-            self._put_text(frame, fps_text, (w - 120, bar_height // 2 + 8),
-                          color=(200, 200, 200), font_scale=0.6)
-        
-        return frame
-    
-    def draw_roi(self, frame, roi, color=(255, 255, 0)):
+            texts.append((fps_text, (w - 120, bar_height // 2 - 10), (200, 200, 200)))
+            
+        # 批量绘制文本以减少PIL转换开销
+        return self._draw_texts(frame, texts)
+
+    def _draw_texts(self, frame, texts):
         """
-        绘制ROI区域
+        批量在图像上绘制文本
         
         Args:
             frame: 图像帧
-            roi: ROI区域 (x, y, w, h)
-            color: 边框颜色
+            texts: 列表，每个元素为 (text, position, color)
             
         Returns:
             frame: 绘制后的图像帧
         """
+        has_chinese = any(self._contains_chinese(t[0]) for t in texts)
+        
+        if self.use_pil and has_chinese:
+            from PIL import Image, ImageDraw
+            
+            # 一次性转换
+            pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            draw = ImageDraw.Draw(pil_image)
+            
+            for text, pos, color in texts:
+                if self._contains_chinese(text):
+                    draw.text(pos, text, font=self.font, fill=color[::-1])
+                else:
+                    # 非中文也可以用PIL画，保持一致性
+                    draw.text(pos, text, font=self.font, fill=color[::-1])
+            
+            # 一次性转回
+            return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+        else:
+            # 使用OpenCV绘制
+            for text, pos, color in texts:
+                # OpenCV的pos是左下角，PIL是左上角，这里做个简单适配
+                cv_pos = (pos[0], pos[1] + 20)
+                cv2.putText(frame, text, cv_pos, cv2.FONT_HERSHEY_SIMPLEX,
+                           0.6, color, 2)
+            return frame
+
+    def _put_text(self, frame, text, position, color=(255, 255, 255),
+                  font_scale=0.7, thickness=2):
+        """
+        在图像上绘制单个文本（已弃用，建议使用_draw_texts）
+        """
+        return self._draw_texts(frame, [(text, position, color)])
+
+    def draw_roi(self, frame, roi, color=(255, 255, 0)):
+        """
+        绘制ROI区域
+        """
         if roi is not None:
             x, y, w, h = roi
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+            # ROI 标签通常不含中文，直接用OpenCV
             cv2.putText(frame, "ROI", (x, y - 10),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
         return frame
@@ -230,39 +267,28 @@ class FrameRenderer:
     def draw_alarm_overlay(self, frame, alarm_level):
         """
         绘制报警覆盖层
-        
-        Args:
-            frame: 图像帧
-            alarm_level: 报警级别
-            
-        Returns:
-            frame: 绘制后的图像帧
         """
         from config import AlarmConfig
         
         if alarm_level == AlarmConfig.LEVEL_DANGER:
-            # 红色闪烁边框
             h, w = frame.shape[:2]
             border_width = 10
             
-            # 使用时间产生闪烁效果
             if int(time.time() * 4) % 2 == 0:
                 cv2.rectangle(frame, (0, 0), (w, h), (0, 0, 255), border_width)
                 
-                # 绘制警告文本
                 warning_text = "!!! VIOLATION DETECTED !!!"
                 text_size = cv2.getTextSize(warning_text, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 3)[0]
                 text_x = (w - text_size[0]) // 2
                 text_y = h - 50
                 
-                # 文本背景
                 cv2.rectangle(frame, (text_x - 10, text_y - 40),
                              (text_x + text_size[0] + 10, text_y + 10), (0, 0, 150), -1)
-                cv2.putText(frame, warning_text, (text_x, text_y),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
+                
+                # 使用 _draw_texts 保持一致性
+                frame = self._draw_texts(frame, [(warning_text, (text_x, text_y - 30), (255, 255, 255))])
         
         elif alarm_level == AlarmConfig.LEVEL_WARNING:
-            # 黄色边框
             h, w = frame.shape[:2]
             cv2.rectangle(frame, (0, 0), (w, h), (0, 255, 255), 5)
         
@@ -271,60 +297,25 @@ class FrameRenderer:
     def draw_info_panel(self, frame, info_dict):
         """
         绘制信息面板
-        
-        Args:
-            frame: 图像帧
-            info_dict: 信息字典
-            
-        Returns:
-            frame: 绘制后的图像帧
         """
         h, w = frame.shape[:2]
         panel_width = 250
         panel_height = len(info_dict) * 30 + 20
         
-        # 绘制半透明背景
         overlay = frame.copy()
         cv2.rectangle(overlay, (w - panel_width - 10, 70),
                      (w - 10, 70 + panel_height), (0, 0, 0), -1)
         frame = cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
         
-        # 绘制信息
+        texts = []
         y_offset = 95
         for key, value in info_dict.items():
             text = f"{key}: {value}"
-            cv2.putText(frame, text, (w - panel_width, y_offset),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            texts.append((text, (w - panel_width, y_offset - 20), (255, 255, 255)))
             y_offset += 30
-        
-        return frame
-    
-    def _put_text(self, frame, text, position, color=(255, 255, 255),
-                  font_scale=0.7, thickness=2):
-        """
-        在图像上绘制文本（支持中文）
-        
-        Args:
-            frame: 图像帧
-            text: 文本内容
-            position: 位置 (x, y)
-            color: 文本颜色 (BGR)
-            font_scale: 字体大小
-            thickness: 字体粗细
-        """
-        if self.use_pil and self._contains_chinese(text):
-            # 使用PIL绘制中文
-            from PIL import Image, ImageDraw, ImageFont
             
-            pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            draw = ImageDraw.Draw(pil_image)
-            draw.text(position, text, font=self.font, fill=color[::-1])
-            frame[:] = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-        else:
-            # 使用OpenCV绘制
-            cv2.putText(frame, text, position, cv2.FONT_HERSHEY_SIMPLEX,
-                       font_scale, color, thickness)
-    
+        return self._draw_texts(frame, texts)
+
     def _contains_chinese(self, text):
         """检查文本是否包含中文"""
         for char in text:

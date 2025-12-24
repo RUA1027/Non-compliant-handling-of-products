@@ -11,6 +11,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 from datetime import datetime
+import queue
 
 from main import ViolationDetectionSystem
 from config import NORMAL_VIDEO_DIR, ABNORMAL_VIDEO_DIR, VIDEO_DIR, AlarmConfig
@@ -24,11 +25,44 @@ class DetectionGUI:
         self.system = ViolationDetectionSystem()
         self.is_running = False
         self.current_video_path = None
+        self.frame_queue = queue.Queue(maxsize=2)
         
         self._setup_ui()
         
         # 注册报警回调以更新GUI
         self.system.alarm_system.register_callback(self._on_alarm_triggered)
+        
+        # 启动GUI更新定时器
+        self.root.after(10, self._poll_frame_queue)
+
+    def _poll_frame_queue(self):
+        """从队列中获取帧并更新UI，由主线程调用"""
+        try:
+            frame = None
+            while not self.frame_queue.empty():
+                frame = self.frame_queue.get_nowait()
+            
+            if frame is not None:
+                self._display_frame(frame)
+        except queue.Empty:
+            pass
+        
+        # 继续循环
+        self.root.after(15, self._poll_frame_queue)
+
+    def _display_frame(self, frame):
+        """将OpenCV帧显示在Tkinter Label上"""
+        # 缩放以适应显示区域
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w = frame_rgb.shape[:2]
+        max_h, max_w = 600, 800
+        scale = min(max_h/h, max_w/w)
+        frame_resized = cv2.resize(frame_rgb, (int(w*scale), int(h*scale)))
+        
+        img = Image.fromarray(frame_resized)
+        imgtk = ImageTk.PhotoImage(image=img)
+        self.video_label.imgtk = imgtk
+        self.video_label.configure(image=imgtk)
 
     def _setup_ui(self):
         # 主容器
@@ -177,24 +211,21 @@ class DetectionGUI:
                 self._update_frame_on_gui(frame)
                 self._update_status_on_gui()
             else:
-                self.root.update()
-                cv2.waitKey(30)
+                time.sleep(0.1)
                 
         self.system.video_processor.release()
         self.status_var.set("已停止")
 
     def _update_frame_on_gui(self, frame):
-        # 缩放以适应显示区域
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w = frame.shape[:2]
-        max_h, max_w = 600, 800
-        scale = min(max_h/h, max_w/w)
-        frame = cv2.resize(frame, (int(w*scale), int(h*scale)))
-        
-        img = Image.fromarray(frame)
-        imgtk = ImageTk.PhotoImage(image=img)
-        self.video_label.imgtk = imgtk
-        self.video_label.configure(image=imgtk)
+        """将帧放入队列，由检测线程调用"""
+        if not self.frame_queue.full():
+            self.frame_queue.put(frame)
+        else:
+            try:
+                self.frame_queue.get_nowait()
+                self.frame_queue.put(frame)
+            except queue.Empty:
+                self.frame_queue.put(frame)
 
     def _update_status_on_gui(self):
         status_text = self.system.alarm_system.get_status_text()
