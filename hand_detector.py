@@ -36,6 +36,10 @@ class HandDetector:
         self.detection_history = []
         self.history_size = 5
         
+        # 运动区域位置历史（用于过滤周期性运动如齿轮）
+        self.motion_position_history = []
+        self.motion_history_size = 15
+        
     def detect_hands_mediapipe(self, frame):
         """
         使用MediaPipe检测手部
@@ -164,7 +168,10 @@ class HandDetector:
                 area = cv2.contourArea(cnt)
                 if area > DetectionConfig.MOTION_AREA_THRESHOLD:
                     x, y, w, h = cv2.boundingRect(cnt)
-                    motion_boxes.append((x, y, w, h))
+                    # 过滤过于细长的区域（可能是反光或机械臂）
+                    aspect_ratio = w / h if h > 0 else 0
+                    if 0.25 < aspect_ratio < 4.0:
+                        motion_boxes.append((x, y, w, h))
         
         self.prev_frame = gray.copy()
         
@@ -206,21 +213,59 @@ class HandDetector:
             skin_boxes = [(x+ox, y+oy, w, h) for x, y, w, h in skin_boxes]
             motion_boxes = [(x+ox, y+oy, w, h) for x, y, w, h in motion_boxes]
         
+        # 过滤MediaPipe检测结果：排除过小或位置过于固定的误报
+        valid_mp_boxes = []
+        for box in mp_boxes:
+            bx, by, bw, bh = box
+            center = (bx + bw // 2, by + bh // 2)
+            area = bw * bh
+            
+            # 1. 尺寸过滤：手部在画面中不应过小（根据图片，误报区域通常较小）
+            if area < 2500: # 约 50x50 像素
+                continue
+                
+            # 2. 静态/周期性过滤：如果该位置长期有“手”且不怎么移动，判定为机械结构
+            if self._is_periodic_motion(center, radius_threshold=30, occurrence_threshold=0.8):
+                continue
+                
+            valid_mp_boxes.append(box)
+        
+        mp_boxes = valid_mp_boxes
+        
         # 综合判断是否检测到手部
         hand_detected = len(mp_boxes) > 0
+        
+        # 记录当前所有检测到的中心位置（用于周期性检测）
+        current_centers = []
+        for box in mp_boxes:
+            bx, by, bw, bh = box
+            current_centers.append((bx + bw // 2, by + bh // 2))
+        for m_box in motion_boxes:
+            mx, my, mw, mh = m_box
+            current_centers.append((mx + mw // 2, my + mh // 2))
+        
+        self.motion_position_history.append(current_centers)
+        if len(self.motion_position_history) > self.motion_history_size:
+            self.motion_position_history.pop(0)
         
         # 增强逻辑：处理戴手套的情况
         # 如果MediaPipe没有检测到，但存在显著的运动区域
         if not hand_detected and len(motion_boxes) > 0:
             for m_box in motion_boxes:
                 mx, my, mw, mh = m_box
-                # 检查运动物体的比例是否像手（避免细长条的干扰）
+                center = (mx + mw // 2, my + mh // 2)
+                
+                # 检查运动物体的比例是否像手
                 aspect_ratio = mw / mh if mh > 0 else 0
                 area = mw * mh
                 
-                # 如果运动区域面积足够大，且比例接近手部（0.3 - 3.0）
-                if area > DetectionConfig.MOTION_AREA_THRESHOLD * 1.2 and 0.3 < aspect_ratio < 3.0:
-                    # 即使没有肤色（戴手套），只要运动特征明显，也判定为检测到
+                # 过滤周期性运动（如齿轮）：检查该位置是否在历史中反复出现
+                if self._is_periodic_motion(center):
+                    continue
+                
+                # 如果运动区域面积足够大，且比例接近手部
+                if area > DetectionConfig.MOTION_AREA_THRESHOLD * 1.5 and 0.35 < aspect_ratio < 2.8:
+                    # 戴手套检测需要更严格的条件
                     hand_detected = True
                     break
         
@@ -255,6 +300,33 @@ class HandDetector:
         }
         
         return result
+    
+    def _is_periodic_motion(self, center, radius_threshold=50, occurrence_threshold=0.6):
+        """
+        判断运动是否为周期性运动（如齿轮）
+        通过检测该位置是否在历史记录中反复出现来判断
+        
+        Args:
+            center: 运动区域中心 (x, y)
+            radius_threshold: 位置匹配半径阈值
+            occurrence_threshold: 出现频率阈值
+            
+        Returns:
+            bool: 是否为周期性运动
+        """
+        if len(self.motion_position_history) < 10:
+            return False
+        
+        occurrence_count = 0
+        for frame_centers in self.motion_position_history:
+            for hist_center in frame_centers:
+                dist = ((center[0] - hist_center[0])**2 + (center[1] - hist_center[1])**2)**0.5
+                if dist < radius_threshold:
+                    occurrence_count += 1
+                    break
+        
+        # 如果该位置在大部分历史帧中都出现过，认为是周期性运动
+        return occurrence_count / len(self.motion_position_history) > occurrence_threshold
     
     def _boxes_overlap(self, box1, box2, threshold=0.3):
         """

@@ -6,6 +6,7 @@ Production Line Violation Detection System - GUI Interface
 
 import os
 import cv2
+import time
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -26,6 +27,7 @@ class DetectionGUI:
         self.is_running = False
         self.current_video_path = None
         self.frame_queue = queue.Queue(maxsize=2)
+        self.thread = None  # 检测线程引用
         
         self._setup_ui()
         
@@ -84,7 +86,6 @@ class DetectionGUI:
         source_group = ttk.LabelFrame(right_panel, text="视频源控制", padding="10")
         source_group.pack(fill=tk.X, pady=5)
         
-        ttk.Button(source_group, text="打开摄像头", command=self._start_camera).pack(fill=tk.X, pady=2)
         ttk.Button(source_group, text="选择视频文件", command=self._select_video).pack(fill=tk.X, pady=2)
         
         # 示例视频快捷选择
@@ -142,15 +143,10 @@ class DetectionGUI:
         # 弹出提示框 (可选，如果不想打断操作可以只在界面显示)
         # messagebox.showwarning("违规警报", f"检测到违规操作！\n时间: {time_str}")
 
-    def _start_camera(self):
-        self._stop_detection()
-        self.current_video_path = 0
-        self._start_thread()
-
     def _select_video(self):
         path = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4 *.avi *.mkv")])
         if path:
-            self._stop_detection()
+            self._stop_detection(wait=True)
             self.current_video_path = path
             self._start_thread()
 
@@ -158,11 +154,24 @@ class DetectionGUI:
         rel_path = self.example_var.get()
         if rel_path:
             path = os.path.join(VIDEO_DIR, rel_path)
-            self._stop_detection()
+            self._stop_detection(wait=True)
             self.current_video_path = path
             self._start_thread()
 
     def _start_thread(self):
+        # 清空帧队列
+        while not self.frame_queue.empty():
+            try:
+                self.frame_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        # 重置系统状态
+        self.system.alarm_system.reset()
+        self.system.hand_detector.detection_history = []
+        self.system.hand_detector.prev_frame = None
+        self.system.hand_detector.motion_position_history = []
+        
         self.is_running = True
         self.system.is_paused = False
         self.btn_pause.config(text="暂停")
@@ -240,9 +249,13 @@ class DetectionGUI:
         self.system.is_paused = not self.system.is_paused
         self.btn_pause.config(text="继续" if self.system.is_paused else "暂停")
 
-    def _stop_detection(self):
+    def _stop_detection(self, wait=False):
         self.is_running = False
         self.system.alarm_system.reset()
+        
+        # 等待线程结束以避免卡壳
+        if wait and self.thread is not None and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
 
     def _reset_alarm(self):
         self.system.alarm_system.reset()

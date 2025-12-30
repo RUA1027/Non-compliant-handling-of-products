@@ -24,8 +24,8 @@ class DetectionConfig:
     """检测算法相关配置"""
     
     # MediaPipe手部检测配置
-    HAND_DETECTION_CONFIDENCE = 0.4  # 降低阈值以提高灵敏度，特别是戴手套的情况
-    HAND_TRACKING_CONFIDENCE = 0.4   # 降低跟踪阈值
+    HAND_DETECTION_CONFIDENCE = 0.35  # 降低阈值以提高灵敏度，特别是戴手套的情况
+    HAND_TRACKING_CONFIDENCE = 0.35   # 降低跟踪阈值
     MAX_NUM_HANDS = 4                # 最大检测手部数量
     
     # 肤色检测配置 (YCrCb色彩空间)
@@ -34,16 +34,16 @@ class DetectionConfig:
     SKIN_AREA_THRESHOLD = 500        # 肤色区域面积阈值
     
     # 运动检测配置
-    MOTION_THRESHOLD = 25            # 帧差阈值
-    MOTION_AREA_THRESHOLD = 1000     # 运动区域面积阈值
+    MOTION_THRESHOLD = 30            # 帧差阈值（提高以减少反光误报）
+    MOTION_AREA_THRESHOLD = 1500     # 运动区域面积阈值（提高以过滤小面积噪声）
     
     # ROI区域配置 (相对坐标 0-1)
     # 设置为None表示检测整个画面
-    ROI_ENABLED = False              # 是否启用ROI
-    ROI_X = 0.1                     # ROI起始x (相对)
-    ROI_Y = 0.1                      # ROI起始y (相对)
-    ROI_WIDTH = 0.8                  # ROI宽度 (相对)
-    ROI_HEIGHT = 0.8                 # ROI高度 (相对)
+    ROI_ENABLED = True               # 启用ROI以排除边缘干扰
+    ROI_X = 0.1                      # 收紧左侧边界
+    ROI_Y = 0.05                     # 顶部保留
+    ROI_WIDTH = 0.8                  # 宽度收缩，排除左右两侧机械臂
+    ROI_HEIGHT = 0.9                 # 高度覆盖主要区域
 
 # ==================== 报警参数配置 ====================
 class AlarmConfig:
