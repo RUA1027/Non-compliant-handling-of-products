@@ -1,7 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-生产线违规取放检测系统 - GUI界面
-Production Line Violation Detection System - GUI Interface
+图形用户界面模块 (GUI Module)
+--------------------------------------------------
+【作用与功能】
+本模块是系统的“交互层”，为用户提供可视化的监控操作平台。
+主要功能包括：实时视频预览、系统启停控制、报警日志实时滚动显示、示例视频快速切换。
+
+【使用的工具与技术】
+1. Tkinter：Python 标准 GUI 库，构建窗口、按钮、列表等控件。
+2. 多线程架构 (Multi-threading)：分离 UI 线程与算法检测线程，防止界面卡死。
+3. 生产者-消费者模型 (Queue)：使用 queue.Queue 在线程间安全传递视频帧。
+4. PIL (Pillow)：处理图像格式转换 (OpenCV BGR -> Tkinter Image)。
+
+【实现方式】
+- DetectionGUI 类：主窗口控制器。
+- _detection_loop (后台线程)：执行视频读取、算法推理、报警判定。
+- _poll_frame_queue (主线程)：定时轮询队列，更新 UI 画面，实现流畅显示。
+- 观察者回调：注册到 AlarmSystem，接收报警事件并更新 Listbox 日志。
+--------------------------------------------------
 """
 
 import os

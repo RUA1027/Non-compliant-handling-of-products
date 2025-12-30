@@ -1,8 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-生产线违规取放检测系统 - 主程序
-Production Line Violation Detection System - Main Entry
-使用命令行方式运行检测
+主程序入口模块 (Main Entry Module)
+--------------------------------------------------
+【作用与功能】
+本模块是系统的“编排者 (Orchestrator)”，负责组装各子模块并运行主业务流程。
+主要功能包括：命令行参数解析、批量测试执行、单视频/摄像头模式调度。
+
+【使用的工具与技术】
+1. Argparse：解析命令行参数 (-v, -c, --test)。
+2. 模块化组装：实例化 HandDetector, AlarmSystem, VideoProcessor 并串联逻辑。
+3. 异常处理：管理视频流的打开与资源释放。
+
+【实现方式】
+- ViolationDetectionSystem 类：核心业务类，封装了 process_video 主循环。
+  在循环中依次调用：读取帧 -> 检测 -> 报警更新 -> 渲染 -> 显示/保存。
+- main 函数：根据用户输入选择运行模式（GUI/CLI/Test）。
+--------------------------------------------------
 """
 
 import os

@@ -1,7 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-视频处理模块
-Video Processing Module for Production Line Violation Detection
+视频处理与渲染模块 (Video Processing & Rendering Module)
+--------------------------------------------------
+【作用与功能】
+本模块是系统的“数据流与视觉层”，负责视频数据的 I/O 和最终画面的绘制。
+主要功能包括：视频源读取、图像预处理（缩放/跳帧）、UI 元素叠加（中文/特效）。
+
+【使用的工具与技术】
+1. OpenCV (cv2)：VideoCapture 读取视频，VideoWriter 录制结果。
+2. PIL (Pillow)：实现跨平台的中文字符绘制（解决 OpenCV 不支持中文问题）。
+3. 性能优化：
+   - 动态缩放 (Resize)：降低分辨率以提升检测 FPS。
+   - 跳帧机制 (Frame Skip)：高负载下丢弃部分帧以保持实时性。
+
+【实现方式】
+- VideoProcessor 类：封装 OpenCV 视频流接口，计算实时 FPS。
+- FrameRenderer 类：提供 draw_status_bar, draw_alarm_overlay 等绘图方法。
+  使用“PIL 桥接技术”在 OpenCV 图像上绘制美观的中文字体。
+--------------------------------------------------
 """
 
 import cv2

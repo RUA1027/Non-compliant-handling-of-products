@@ -1,7 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-生产线违规取放检测系统 - 配置文件
-Configuration file for Production Line Violation Detection System
+全局配置模块 (Configuration Module)
+--------------------------------------------------
+【作用与功能】
+本模块是系统的“参数控制中心”，集中管理所有静态配置，实现代码与参数解耦。
+主要功能包括：路径自动初始化、算法阈值设定、UI 样式定义及报警规则配置。
+
+【使用的工具与技术】
+1. 静态配置类：使用 Python 类属性组织参数，无需实例化即可访问。
+2. 路径管理 (os.path)：基于当前文件位置动态计算绝对路径，确保跨环境兼容性。
+3. 自动初始化：在模块加载时自动检测并创建 logs/screenshots 目录。
+
+【实现方式】
+- DetectionConfig：定义 MediaPipe 阈值、肤色范围 (YCrCb)、ROI 区域比例。
+- AlarmConfig：定义报警触发帧数、冷却时间、颜色及声音频率。
+- DisplayConfig & VideoConfig：定义界面显示开关及视频处理参数。
+--------------------------------------------------
 """
 
 import os

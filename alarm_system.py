@@ -1,7 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-报警系统模块
-Alarm System Module for Production Line Violation Detection
+报警系统模块 (Alarm System Module)
+--------------------------------------------------
+【作用与功能】
+本模块是系统的“决策中枢”，负责将视觉检测结果转化为具体的业务响应。
+主要功能包括：报警状态机管理、防抖逻辑判断、多媒体报警触发（声音/日志）以及事件分发。
+
+【使用的工具与技术】
+1. 状态机模式 (State Machine)：管理 Normal -> Warning -> Danger 的状态流转。
+2. 线程 (Threading)：使用独立守护线程播放报警音，避免阻塞主视觉循环。
+3. 观察者模式 (Observer Pattern)：通过回调机制 (Callback) 通知 GUI 更新日志。
+4. CSV 持久化：使用标准 I/O 操作记录结构化违规日志。
+
+【实现方式】
+- AlarmSystem 类：维护 violation_count（连续违规计数）和 current_level（当前状态）。
+  采用“非对称滤波”策略：触发报警需连续多帧确认（防误报），消除报警只需少量帧（高灵敏）。
+- EventLogger 类：负责将报警事件的时间戳、置信度、截图路径写入 CSV 文件。
+--------------------------------------------------
 """
 
 import os
