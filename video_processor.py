@@ -12,31 +12,31 @@ from config import DisplayConfig, VideoConfig
 
 class VideoProcessor:
     """
-    视频处理器类
-    负责视频的读取、处理、显示
+    视频处理引擎：
+    负责视频流的生命周期管理，包括多源输入（摄像头/文件）、预处理（缩放/跳帧）以及视频录制。
     """
     
     def __init__(self, source=0):
         """
-        初始化视频处理器
+        初始化视频处理器。
         
         Args:
-            source: 视频源，可以是摄像头索引(int)或视频文件路径(str)
+            source: 视频源。0 代表默认摄像头，字符串代表视频文件路径。
         """
         self.source = source
         self.cap = None
         self.is_running = False
         
-        # 帧率计算
+        # 性能统计：用于实时计算处理帧率 (FPS)
         self.fps = 0.0
         self.frame_count = 0
         self.start_time = time.time()
         
-        # 录制器
+        # 视频持久化：用于将处理后的画面保存为视频文件
         self.video_writer = None
         
     def open(self):
-        """打开视频源"""
+        """打开视频源并获取元数据（分辨率、总帧数等）"""
         self.cap = cv2.VideoCapture(self.source)
         
         if self.cap is None or not self.cap.isOpened():
@@ -46,7 +46,7 @@ class VideoProcessor:
         self.start_time = time.time()
         self.frame_count = 0
         
-        # 获取视频信息
+        # 提取视频流属性
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.video_fps = self.cap.get(cv2.CAP_PROP_FPS)
@@ -56,7 +56,8 @@ class VideoProcessor:
     
     def read(self):
         """
-        读取一帧
+        读取并预处理一帧图像。
+        包含跳帧逻辑（降低 CPU 负载）和缩放逻辑（提升检测速度）。
         
         Returns:
             tuple: (success, frame)
@@ -69,19 +70,19 @@ class VideoProcessor:
         if ret and frame is not None:
             self.frame_count += 1
             
-            # 跳帧处理
+            # 性能优化：跳帧处理。在处理能力有限时，可以跳过中间帧以维持实时性
             if VideoConfig.FRAME_SKIP > 0:
                 for _ in range(VideoConfig.FRAME_SKIP):
                     self.cap.read()
                     self.frame_count += 1
             
-            # 缩放处理
+            # 性能优化：缩放处理。减小输入分辨率可显著加快深度学习模型的推理速度
             if VideoConfig.PROCESS_SCALE != 1.0:
                 new_width = int(self.width * VideoConfig.PROCESS_SCALE)
                 new_height = int(self.height * VideoConfig.PROCESS_SCALE)
                 frame = cv2.resize(frame, (new_width, new_height))
             
-            # 计算帧率
+            # 实时 FPS 计算：反映系统当前的实际运行效率
             elapsed = time.time() - self.start_time
             if elapsed > 0:
                 self.fps = float(self.frame_count / elapsed)
@@ -143,18 +144,18 @@ class VideoProcessor:
 
 class FrameRenderer:
     """
-    帧渲染器类
-    负责在图像上绘制各种信息
+    视觉渲染引擎：
+    负责在原始视频帧上叠加显示检测框、状态栏、报警特效以及中文字符。
     """
     
     def __init__(self):
-        """初始化渲染器"""
-        # 尝试加载中文字体（如果PIL可用）
+        """初始化渲染器，配置中文字体支持"""
+        # 跨平台中文支持：OpenCV 原生不支持中文，此处通过 PIL (Pillow) 库进行桥接
         self.use_pil = False
         try:
             from PIL import Image, ImageDraw, ImageFont
             self.pil_available = True
-            # 尝试加载中文字体 (按优先级尝试不同系统下的常见中文字体)
+            # 自动搜索系统中可用的中文字体
             font_names = ["simhei.ttf", "msyh.ttc", "STHeiti Medium.ttc", "DroidSansFallback.ttf"]
             self.font = None
             for font_name in font_names:
@@ -173,30 +174,27 @@ class FrameRenderer:
     
     def draw_status_bar(self, frame, status_text, status_color, fps=0.0):
         """
-        绘制状态栏
+        在画面顶部绘制半透明状态栏。
         
         Args:
             frame: 图像帧
-            status_text: 状态文本
-            status_color: 状态颜色 (BGR)
-            fps: 帧率
-            
-        Returns:
-            frame: 绘制后的图像帧
+            status_text: 当前系统状态描述（支持中文）
+            status_color: 状态指示灯颜色
+            fps: 实时帧率
         """
         h, w = frame.shape[:2]
         
-        # 绘制状态栏背景
+        # 绘制半透明背景：增强文字可读性
         bar_height = 60
         overlay = frame.copy()
         cv2.rectangle(overlay, (0, 0), (w, bar_height), (40, 40, 40), -1)
         frame = cv2.addWeighted(overlay, 0.7, frame, 0.3, 0)
         
-        # 绘制状态指示器
+        # 绘制状态指示灯（圆形）
         indicator_radius = 15
         cv2.circle(frame, (30, bar_height // 2), indicator_radius, status_color, -1)
         
-        # 准备绘制文本
+        # 准备文本数据
         texts = []
         texts.append((status_text, (60, bar_height // 2 - 12), (255, 255, 255)))
         
@@ -204,69 +202,50 @@ class FrameRenderer:
             fps_text = f"FPS: {fps:.1f}"
             texts.append((fps_text, (w - 120, bar_height // 2 - 10), (200, 200, 200)))
             
-        # 批量绘制文本以减少PIL转换开销
+        # 统一渲染：减少 OpenCV 与 PIL 之间的转换次数，优化性能
         return self._draw_texts(frame, texts)
 
     def _draw_texts(self, frame, texts):
         """
-        批量在图像上绘制文本
-        
-        Args:
-            frame: 图像帧
-            texts: 列表，每个元素为 (text, position, color)
-            
-        Returns:
-            frame: 绘制后的图像帧
+        文本渲染核心方法：自动识别语种并选择渲染引擎。
         """
         has_chinese = any(self._contains_chinese(t[0]) for t in texts)
         
         if self.use_pil and has_chinese:
+            # 包含中文时，切换到 PIL 渲染引擎
             from PIL import Image, ImageDraw
             
-            # 一次性转换
+            # 格式转换：OpenCV (BGR) -> PIL (RGB)
             pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             draw = ImageDraw.Draw(pil_image)
             
             for text, pos, color in texts:
-                if self._contains_chinese(text):
-                    draw.text(pos, text, font=self.font, fill=color[::-1])
-                else:
-                    # 非中文也可以用PIL画，保持一致性
-                    draw.text(pos, text, font=self.font, fill=color[::-1])
+                # PIL 使用 RGB 颜色，需反转 OpenCV 的 BGR
+                draw.text(pos, text, font=self.font, fill=color[::-1])
             
-            # 一次性转回
+            # 格式转换：PIL (RGB) -> OpenCV (BGR)
             return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
         else:
-            # 使用OpenCV绘制
+            # 纯英文场景，直接使用 OpenCV 原生函数，效率更高
             for text, pos, color in texts:
-                # OpenCV的pos是左下角，PIL是左上角，这里做个简单适配
                 cv_pos = (pos[0], pos[1] + 20)
                 cv2.putText(frame, text, cv_pos, cv2.FONT_HERSHEY_SIMPLEX,
                            0.6, color, 2)
             return frame
 
-    def _put_text(self, frame, text, position, color=(255, 255, 255),
-                  font_scale=0.7, thickness=2):
-        """
-        在图像上绘制单个文本（已弃用，建议使用_draw_texts）
-        """
-        return self._draw_texts(frame, [(text, position, color)])
-
     def draw_roi(self, frame, roi, color=(255, 255, 0)):
-        """
-        绘制ROI区域
-        """
+        """绘制感兴趣区域 (ROI) 的边界框"""
         if roi is not None:
             x, y, w, h = roi
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-            # ROI 标签通常不含中文，直接用OpenCV
             cv2.putText(frame, "ROI", (x, y - 10),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
         return frame
     
     def draw_alarm_overlay(self, frame, alarm_level):
         """
-        绘制报警覆盖层
+        绘制全屏报警特效。
+        危险级别时，画面四周会闪烁红色边框，并显示醒目的警告标语。
         """
         from config import AlarmConfig
         
@@ -274,6 +253,7 @@ class FrameRenderer:
             h, w = frame.shape[:2]
             border_width = 10
             
+            # 闪烁逻辑：利用时间戳实现 2Hz 的视觉闪烁效果
             if int(time.time() * 4) % 2 == 0:
                 cv2.rectangle(frame, (0, 0), (w, h), (0, 0, 255), border_width)
                 
@@ -282,13 +262,14 @@ class FrameRenderer:
                 text_x = (w - text_size[0]) // 2
                 text_y = h - 50
                 
+                # 绘制文字背景块，增强视觉冲击力
                 cv2.rectangle(frame, (text_x - 10, text_y - 40),
                              (text_x + text_size[0] + 10, text_y + 10), (0, 0, 150), -1)
                 
-                # 使用 _draw_texts 保持一致性
                 frame = self._draw_texts(frame, [(warning_text, (text_x, text_y - 30), (255, 255, 255))])
         
         elif alarm_level == AlarmConfig.LEVEL_WARNING:
+            # 警告级别：仅显示黄色边框
             h, w = frame.shape[:2]
             cv2.rectangle(frame, (0, 0), (w, h), (0, 255, 255), 5)
         

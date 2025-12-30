@@ -18,29 +18,42 @@ from main import ViolationDetectionSystem
 from config import NORMAL_VIDEO_DIR, ABNORMAL_VIDEO_DIR, VIDEO_DIR, AlarmConfig
 
 class DetectionGUI:
+    """
+    系统图形用户界面 (GUI)：
+    基于 Tkinter 构建，采用多线程架构确保视频处理与界面响应互不干扰。
+    实现了视频预览、实时状态监控、报警日志记录及示例视频快速切换功能。
+    """
     def __init__(self, root):
         self.root = root
         self.root.title("生产线违规取放检测系统 v1.0")
         self.root.geometry("1200x800")
         
+        # 初始化核心检测系统
         self.system = ViolationDetectionSystem()
         self.is_running = False
         self.current_video_path = None
+        
+        # 线程间通信队列：用于将检测线程处理后的帧安全地传递给 UI 线程显示
+        # maxsize=2 限制缓冲区大小，确保显示的画面具有最低延迟
         self.frame_queue = queue.Queue(maxsize=2)
-        self.thread = None  # 检测线程引用
+        self.thread = None  # 后台检测线程引用
         
         self._setup_ui()
         
-        # 注册报警回调以更新GUI
+        # 观察者模式：将 GUI 的日志更新函数注册到报警系统的回调列表中
         self.system.alarm_system.register_callback(self._on_alarm_triggered)
         
-        # 启动GUI更新定时器
+        # 启动 UI 刷新定时器：每 15ms 检查一次队列是否有新画面
         self.root.after(10, self._poll_frame_queue)
 
     def _poll_frame_queue(self):
-        """从队列中获取帧并更新UI，由主线程调用"""
+        """
+        UI 线程轮询函数：负责从队列中提取最新帧并渲染。
+        这是解决“多线程操作 UI 崩溃”问题的标准做法。
+        """
         try:
             frame = None
+            # 尽可能获取队列中最新的帧，舍弃旧帧
             while not self.frame_queue.empty():
                 frame = self.frame_queue.get_nowait()
             
@@ -49,21 +62,26 @@ class DetectionGUI:
         except queue.Empty:
             pass
         
-        # 继续循环
+        # 递归调用，维持 UI 刷新循环
         self.root.after(15, self._poll_frame_queue)
 
     def _display_frame(self, frame):
-        """将OpenCV帧显示在Tkinter Label上"""
-        # 缩放以适应显示区域
+        """
+        图像格式转换与缩放：将 OpenCV 的 BGR 格式转换为 Tkinter 可显示的 PhotoImage。
+        """
+        # 颜色空间转换：OpenCV (BGR) -> PIL (RGB)
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w = frame_rgb.shape[:2]
+        
+        # 自适应缩放：保持比例缩放到显示区域大小
         max_h, max_w = 600, 800
         scale = min(max_h/h, max_w/w)
         frame_resized = cv2.resize(frame_rgb, (int(w*scale), int(h*scale)))
         
+        # 转换为 Tkinter 兼容对象
         img = Image.fromarray(frame_resized)
         imgtk = ImageTk.PhotoImage(image=img)
-        self.video_label.imgtk = imgtk
+        self.video_label.imgtk = imgtk # 必须保持引用，否则会被垃圾回收导致白屏
         self.video_label.configure(image=imgtk)
 
     def _setup_ui(self):
@@ -179,6 +197,10 @@ class DetectionGUI:
         self.thread.start()
 
     def _detection_loop(self):
+        """
+        后台检测线程主循环：
+        负责视频读取、算法推理、结果渲染及状态同步。
+        """
         from video_processor import VideoProcessor
         self.system.video_processor = VideoProcessor(self.current_video_path)
         try:
@@ -187,16 +209,17 @@ class DetectionGUI:
             messagebox.showerror("错误", f"无法打开视频源: {e}")
             return
 
-        # 获取视频尺寸用于ROI计算
+        # 动态获取视频尺寸并计算 ROI 区域
         width = self.system.video_processor.width
         height = self.system.video_processor.height
         self.system.roi = self.system._get_roi(width, height)
         
-        # 重置统计
+        # 初始化统计数据
         self.system.stats = {'total_frames': 0, 'violation_frames': 0, 'total_alarms': 0}
         
         while self.is_running:
             if not self.system.is_paused:
+                # 1. 读取原始帧
                 ret, frame = self.system.video_processor.read()
                 if not ret or frame is None:
                     break
@@ -204,22 +227,25 @@ class DetectionGUI:
                 self.system.current_frame = frame.copy()
                 self.system.stats['total_frames'] += 1
                 
-                # 检测
+                # 2. 执行多模态检测算法
                 res = self.system.hand_detector.detect(frame, self.system.roi)
+                
+                # 3. 更新报警状态机
                 level = self.system.alarm_system.update(res['stable_detection'], res['detection_confidence'])
                 
                 if res['stable_detection']:
                     self.system.stats['violation_frames'] += 1
                 
-                # 渲染
+                # 4. 视觉渲染：叠加 ROI、检测框及报警特效
                 frame = self.system.hand_detector.draw_results(frame, res)
                 frame = self.system.frame_renderer.draw_roi(frame, self.system.roi)
                 frame = self.system.frame_renderer.draw_alarm_overlay(frame, level)
                 
-                # 更新GUI显示
+                # 5. 跨线程同步：将处理后的画面和状态发送给 UI 线程
                 self._update_frame_on_gui(frame)
                 self._update_status_on_gui()
             else:
+                # 暂停状态下释放 CPU 资源
                 time.sleep(0.1)
                 
         self.system.video_processor.release()
