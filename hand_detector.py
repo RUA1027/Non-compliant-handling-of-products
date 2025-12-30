@@ -234,6 +234,7 @@ class HandDetector:
             motion_boxes = [(x+ox, y+oy, w, h) for x, y, w, h in motion_boxes]
         
         # 3. 智能过滤逻辑：排除产线上的固定干扰物
+        # 产线上的细小零件、反光点或远处的干扰物虽然可能被模型误识别，但其面积往往较小。
         valid_mp_boxes = []
         for box in mp_boxes:
             bx, by, bw, bh = box
@@ -321,7 +322,10 @@ class HandDetector:
         """
         判断运动是否为周期性运动（如齿轮）
         通过检测该位置是否在历史记录中反复出现来判断
-        
+        当新一帧检测到目标时，计算其中心点与历史记录中所有点的欧式距离。
+        如果该目标在过去 15 帧中，有超过 80% 的时间都出现在同一个半径范围内
+        系统就判定它是一个“固定干扰源”而非人手。
+
         Args:
             center: 运动区域中心 (x, y)
             radius_threshold: 位置匹配半径阈值
@@ -346,11 +350,19 @@ class HandDetector:
     
     def _boxes_overlap(self, box1, box2, threshold=0.3):
         """
-        判断两个边界框是否重叠
+        计算两个边界框的交并比 (IoU)，判断其重叠程度，实现多源信息互证。
+        系统同时运行了多种算法，有着来自不同算法的检测边界框，它们可能会在同一个位置都检测到目标。
+
+        该函数常用于多模态结果融合或去重，以判定不同算法检测到的是否为同一目标。
+        通过计算 IoU来量化不同算法检测结果的重叠程度。
+        这不仅能帮助合并重复的检测目标，还能在复杂的产线背景下，通过空间约束来过滤掉那些位置孤立、不符合逻辑的误报区域。
+
+        算法原理：
+        IoU = (Box1 ∩ Box2) / (Box1 ∪ Box2)
         
         Args:
             box1, box2: 边界框 (x, y, w, h)
-            threshold: IoU阈值
+            threshold: IoU 阈值，超过此值判定为重叠
             
         Returns:
             bool: 是否重叠
@@ -358,20 +370,26 @@ class HandDetector:
         x1, y1, w1, h1 = box1
         x2, y2, w2, h2 = box2
         
-        # 计算交集
+        # 1. 计算交集区域 (Intersection) 的坐标
         xi1 = max(x1, x2)
         yi1 = max(y1, y2)
         xi2 = min(x1 + w1, x2 + w2)
         yi2 = min(y1 + h1, y2 + h2)
         
+        # 如果交集区域的宽或高小于等于 0，说明完全不相交
         if xi1 >= xi2 or yi1 >= yi2:
             return False
         
+        # 2. 计算交集面积
         intersection = (xi2 - xi1) * (yi2 - yi1)
+        
+        # 3. 计算并集面积 (Union)
+        # 并集面积 = 矩形A面积 + 矩形B面积 - 交集面积
         area1 = w1 * h1
         area2 = w2 * h2
         union = area1 + area2 - intersection
         
+        # 4. 计算 IoU 值
         iou = intersection / union if union > 0 else 0
         
         return iou > threshold

@@ -42,9 +42,9 @@ class DetectionConfig:
     """
     
     # MediaPipe 手部检测配置
-    # 灵敏度权衡：较低的阈值(0.35)能更好地捕捉戴手套或光照不足时的手部，但可能增加误报
-    HAND_DETECTION_CONFIDENCE = 0.4  
-    HAND_TRACKING_CONFIDENCE = 0.4   
+    # 灵敏度权衡：较低的阈值能更好地捕捉戴手套或光照不足时的手部
+    HAND_DETECTION_CONFIDENCE = 0.38  
+    HAND_TRACKING_CONFIDENCE = 0.38   
     MAX_NUM_HANDS = 5                # 产线场景下可能出现多只手同时操作
     
     # 肤色检测配置 (基于 YCrCb 色彩空间)
